@@ -1,0 +1,8 @@
+{
+  "name": "Remix ProofFlow — AI Agent for Verifiable Transactions",
+  "description": "Don\u0027t Just Trust AI. Verify Its Actions. Connect AI transaction decisions, explicit user approval, and blockchain execution through cryptographically verifiable records.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
