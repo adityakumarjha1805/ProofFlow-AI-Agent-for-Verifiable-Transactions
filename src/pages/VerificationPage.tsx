@@ -27,6 +27,7 @@ import type {
   VerificationStatus,
   VerificationAudit,
 } from '../types/index.ts';
+import { ExecutionTraceTimeline } from '../components/ExecutionTraceTimeline.tsx';
 
 interface VerificationPageProps {
   proposal: TransactionProposal | null;
@@ -624,39 +625,212 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
           </div>
         </div>
 
-        {/* Parameter Diff Breakdown Table */}
-        {p.verification?.parameterDiffs && p.verification.parameterDiffs.length > 0 && (
-          <div className="mt-4 overflow-hidden rounded-xl border border-slate-800 w-full min-w-0 max-w-full">
-            <div className="overflow-x-auto w-full">
-              <table className="w-full min-w-[480px] text-left text-xs font-mono">
-                <thead className="bg-slate-950/80 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                  <tr>
-                    <th className="px-3 sm:px-4 py-2.5">Field</th>
-                    <th className="px-3 sm:px-4 py-2.5">Approved Commitment</th>
-                    <th className="px-3 sm:px-4 py-2.5">Mined On-Chain</th>
-                    <th className="px-3 sm:px-4 py-2.5 text-right">Result</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
-                  {p.verification.parameterDiffs.map((diff, idx) => (
-                    <tr key={idx} className="hover:bg-slate-800/30">
-                      <td className="px-3 sm:px-4 py-2 text-slate-300 font-semibold">{diff.field}</td>
-                      <td className="px-3 sm:px-4 py-2 text-cyan-300 break-all [overflow-wrap:anywhere] max-w-[140px] sm:max-w-[200px]">{diff.intentValue}</td>
-                      <td className="px-3 sm:px-4 py-2 text-indigo-300 break-all [overflow-wrap:anywhere] max-w-[140px] sm:max-w-[200px]">{diff.executedValue}</td>
-                      <td className="px-3 sm:px-4 py-2 text-right">
-                        {diff.matches ? (
-                          <span className="text-emerald-400 font-bold">MATCH</span>
-                        ) : (
-                          <span className="text-rose-400 font-bold">DIVERGENCE</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Full Side-by-Side: Approved Proposal vs Actual Executed Transaction */}
+        <div className="mt-6 overflow-hidden rounded-xl border border-slate-800 w-full min-w-0 max-w-full">
+          <div className="bg-slate-950/90 px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                Side-by-Side Parameter Verification
+              </h4>
+              <p className="text-[11px] text-slate-400">
+                Approved proposal specification compared against actual authoritatively mined execution receipt
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {p.isTamperedDemo ? (
+                <span className="inline-flex items-center space-x-1 rounded bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                  <AlertTriangle className="h-3 w-3 text-amber-400" />
+                  <span>SIMULATED TAMPER DEMO</span>
+                </span>
+              ) : p.execution?.isLiveSepolia ? (
+                <span className="inline-flex items-center space-x-1 rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>LIVE CHAIN DATA (Sepolia RPC)</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center space-x-1 rounded bg-slate-800 border border-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-300">
+                  <span>LOCAL SANDBOX EXECUTION</span>
+                </span>
+              )}
             </div>
           </div>
-        )}
+
+          <div className="overflow-x-auto w-full">
+            <table className="w-full min-w-[620px] text-left text-xs font-mono">
+              <thead className="bg-slate-950/80 text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="px-3 sm:px-4 py-2.5 w-1/4">Parameter</th>
+                  <th className="px-3 sm:px-4 py-2.5 w-1/3">Approved Proposal Specification</th>
+                  <th className="px-3 sm:px-4 py-2.5 w-1/3">Actual Executed Transaction</th>
+                  <th className="px-3 sm:px-4 py-2.5 text-right">Integrity Check</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                {/* 1. Recipient */}
+                <tr className="hover:bg-slate-800/30">
+                  <td className="px-3 sm:px-4 py-2.5 text-slate-300 font-semibold">Recipient Address</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-cyan-300 break-all select-all [overflow-wrap:anywhere]">{p.intent.recipient}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-indigo-300 break-all select-all [overflow-wrap:anywhere]">{p.execution?.to || 'Awaiting execution'}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-right">
+                    {!p.execution ? (
+                      <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300">NOT VERIFIED</span>
+                    ) : p.intent.recipient.toLowerCase() === (p.execution.to || '').toLowerCase() ? (
+                      <span className="rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">PASS</span>
+                    ) : (
+                      <span className="rounded bg-rose-950/80 border border-rose-500/40 px-2 py-0.5 text-[10px] font-bold text-rose-300">FAIL</span>
+                    )}
+                  </td>
+                </tr>
+
+                {/* 2. Amount */}
+                <tr className="hover:bg-slate-800/30">
+                  <td className="px-3 sm:px-4 py-2.5 text-slate-300 font-semibold">Amount</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-cyan-300 font-bold">{p.intent.amount} {p.intent.tokenSymbol || 'ETH'}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-indigo-300 font-bold">{p.execution?.valueEth !== undefined ? `${p.execution.valueEth} ETH` : 'Awaiting execution'}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-right">
+                    {!p.execution ? (
+                      <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300">NOT VERIFIED</span>
+                    ) : Number(p.intent.amount) === Number(p.execution.valueEth) ? (
+                      <span className="rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">PASS</span>
+                    ) : (
+                      <span className="rounded bg-rose-950/80 border border-rose-500/40 px-2 py-0.5 text-[10px] font-bold text-rose-300">FAIL</span>
+                    )}
+                  </td>
+                </tr>
+
+                {/* 3. Chain ID */}
+                <tr className="hover:bg-slate-800/30">
+                  <td className="px-3 sm:px-4 py-2.5 text-slate-300 font-semibold">Chain ID</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-cyan-300">{p.intent.chainId || 11155111} (Sepolia)</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-indigo-300">{p.execution?.chainId ? `${p.execution.chainId} (${p.execution.chainId === 11155111 ? 'Sepolia' : 'Other'})` : (p.execution ? '11155111 (Sepolia)' : 'Awaiting execution')}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-right">
+                    {!p.execution ? (
+                      <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300">NOT VERIFIED</span>
+                    ) : (!p.execution.chainId || p.execution.chainId === (p.intent.chainId || 11155111)) ? (
+                      <span className="rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">PASS</span>
+                    ) : (
+                      <span className="rounded bg-rose-950/80 border border-rose-500/40 px-2 py-0.5 text-[10px] font-bold text-rose-300">FAIL</span>
+                    )}
+                  </td>
+                </tr>
+
+                {/* 4. Transaction Hash & Explorer Link */}
+                <tr className="hover:bg-slate-800/30">
+                  <td className="px-3 sm:px-4 py-2.5 text-slate-300 font-semibold">Transaction Hash</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-cyan-300 text-[11px] break-all">Canonical Proposal Commitment</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-indigo-300 text-[11px] break-all">
+                    {p.execution?.txHash ? (
+                      <div className="flex items-center space-x-1.5 flex-wrap">
+                        <span className="select-all">{p.execution.txHash}</span>
+                        <a
+                          href={p.execution.explorerUrl || `https://sepolia.etherscan.io/tx/${p.execution.txHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center space-x-1 text-cyan-400 hover:text-cyan-300 underline font-sans text-[11px]"
+                          title="Open block explorer"
+                        >
+                          <span>Explorer</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    ) : (
+                      'Awaiting block confirmation'
+                    )}
+                  </td>
+                  <td className="px-3 sm:px-4 py-2.5 text-right">
+                    {p.execution?.txHash ? (
+                      <span className="rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">PASS</span>
+                    ) : (
+                      <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300">NOT VERIFIED</span>
+                    )}
+                  </td>
+                </tr>
+
+                {/* 5. Receipt Status */}
+                <tr className="hover:bg-slate-800/30">
+                  <td className="px-3 sm:px-4 py-2.5 text-slate-300 font-semibold">Receipt Status</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-cyan-300">SUCCESS (Mined Execution)</td>
+                  <td className="px-3 sm:px-4 py-2.5">
+                    <span className={p.execution?.status === 'SUCCESS' ? 'text-emerald-400 font-bold' : p.execution?.status === 'REVERTED' || p.execution?.status === 'FAILED' ? 'text-rose-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {p.execution?.status || 'PENDING'}
+                    </span>
+                  </td>
+                  <td className="px-3 sm:px-4 py-2.5 text-right">
+                    {!p.execution?.status || p.execution.status === 'PENDING' ? (
+                      <span className="rounded bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 text-[10px] font-bold text-amber-300">NOT VERIFIED</span>
+                    ) : p.execution.status === 'SUCCESS' ? (
+                      <span className="rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">PASS</span>
+                    ) : (
+                      <span className="rounded bg-rose-950/80 border border-rose-500/40 px-2 py-0.5 text-[10px] font-bold text-rose-300">FAIL</span>
+                    )}
+                  </td>
+                </tr>
+
+                {/* 6. Block Number */}
+                <tr className="hover:bg-slate-800/30">
+                  <td className="px-3 sm:px-4 py-2.5 text-slate-300 font-semibold">Block Number</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-cyan-300">Mined Block Anchor</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-indigo-300">{p.execution?.blockNumber ? `#${p.execution.blockNumber}` : 'Pending block inclusion'}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-right">
+                    {p.execution?.blockNumber ? (
+                      <span className="rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">PASS</span>
+                    ) : (
+                      <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300">NOT VERIFIED</span>
+                    )}
+                  </td>
+                </tr>
+
+                {/* 7. Commitment / Integrity Result */}
+                <tr className="hover:bg-slate-800/30">
+                  <td className="px-3 sm:px-4 py-2.5 text-slate-300 font-semibold">Integrity Commitment</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-cyan-300 text-[11px] break-all select-all">{p.commitment?.commitmentHash || p.commitment?.sha256Hash || 'Pending approval'}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-indigo-300 text-[11px] break-all select-all">{p.verification?.executedPayloadHash || (p.execution ? 'Computed on receipt' : 'Awaiting execution')}</td>
+                  <td className="px-3 sm:px-4 py-2.5 text-right">
+                    {!p.verification ? (
+                      <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-300">NOT VERIFIED</span>
+                    ) : p.verification.hashesMatch ? (
+                      <span className="rounded bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-300">PASS</span>
+                    ) : (
+                      <span className="rounded bg-rose-950/80 border border-rose-500/40 px-2 py-0.5 text-[10px] font-bold text-rose-300">FAIL</span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mismatch Diagnostics and Explanations */}
+          {p.verification && !p.verification.hashesMatch && (
+            <div className="bg-rose-950/40 border-t border-rose-500/40 p-4 space-y-2">
+              <div className="flex items-center space-x-2 text-rose-300 font-bold text-xs">
+                <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+                <span>Verification Failure Diagnostics & Explanations:</span>
+              </div>
+              <ul className="list-disc list-inside text-xs text-rose-200/90 space-y-1 font-sans">
+                {p.execution && p.intent.recipient.toLowerCase() !== (p.execution.to || '').toLowerCase() && (
+                  <li>
+                    <strong className="text-white">Recipient Address Divergence:</strong> Approved address was <span className="font-mono text-cyan-300">{p.intent.recipient}</span>, but on-chain execution transferred to <span className="font-mono text-rose-300">{p.execution.to}</span>. Possible address substitution attack prevented.
+                  </li>
+                )}
+                {p.execution && Number(p.intent.amount) !== Number(p.execution.valueEth) && (
+                  <li>
+                    <strong className="text-white">Transfer Value Drift:</strong> Approved limit was <span className="font-mono text-cyan-300">{p.intent.amount} ETH</span>, but execution transferred <span className="font-mono text-rose-300">{p.execution.valueEth} ETH</span>.
+                  </li>
+                )}
+                {p.execution?.status === 'REVERTED' && (
+                  <li>
+                    <strong className="text-white">On-Chain Transaction Reverted:</strong> The EVM transaction execution reverted during execution. Zero funds were delivered to recipient.
+                  </li>
+                )}
+                {p.verification && !p.verification.hashesMatch && (
+                  <li>
+                    <strong className="text-white">Commitment Hash Mismatch:</strong> Canonical RFC 8785 Keccak-256 hash (<span className="font-mono text-cyan-300 text-[10px]">{p.commitment?.commitmentHash?.slice(0, 16)}...</span>) does not match recomputed mined receipt payload (<span className="font-mono text-rose-300 text-[10px]">{p.verification.executedPayloadHash?.slice(0, 16)}...</span>).
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* The 8 Cryptographic Verification Checks Matrix */}
@@ -694,22 +868,22 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
                     {check.status === 'PASSED' ? (
                       <span className="inline-flex items-center space-x-1.5 rounded-lg bg-emerald-950/80 border border-emerald-500/40 px-2.5 py-1 text-xs font-bold text-emerald-300">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                        <span>PASSED</span>
+                        <span>PASS</span>
                       </span>
                     ) : check.status === 'PENDING' ? (
                       <span className="inline-flex items-center space-x-1.5 rounded-lg bg-amber-950/80 border border-amber-500/40 px-2.5 py-1 text-xs font-bold text-amber-300">
                         <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                        <span>PENDING</span>
+                        <span>NOT VERIFIED</span>
                       </span>
                     ) : check.status === 'INCOMPLETE' ? (
-                      <span className="inline-flex items-center space-x-1.5 rounded-lg bg-purple-950/80 border border-purple-500/40 px-2.5 py-1 text-xs font-bold text-purple-300">
-                        <HelpCircle className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                        <span>INCOMPLETE</span>
+                      <span className="inline-flex items-center space-x-1.5 rounded-lg bg-slate-800 border border-slate-700 px-2.5 py-1 text-xs font-bold text-slate-300">
+                        <HelpCircle className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                        <span>NOT VERIFIED</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center space-x-1.5 rounded-lg bg-rose-950/80 border border-rose-500/40 px-2.5 py-1 text-xs font-bold text-rose-300">
                         <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
-                        <span>FAILED / MISMATCH</span>
+                        <span>FAIL</span>
                       </span>
                     )}
                   </div>
@@ -740,6 +914,13 @@ export const VerificationPage: React.FC<VerificationPageProps> = ({
           )}
         </div>
       </div>
+
+      {/* End-to-End Execution Trace Timeline */}
+      {p.executionTrace && p.executionTrace.length > 0 && (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 sm:p-6 shadow-xl backdrop-blur-sm w-full min-w-0 max-w-full">
+          <ExecutionTraceTimeline trace={p.executionTrace} />
+        </div>
+      )}
 
       {/* Interactive Tampering / Security Demonstration Tool */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 shadow-xl w-full min-w-0 max-w-full">

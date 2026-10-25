@@ -1,6 +1,7 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { evaluatePolicy, DEFAULT_POLICY_CONFIG, isValidAddress } from './src/services/policyEngine.ts';
 import { evaluateTransactionPolicy, DEFAULT_DETERMINISTIC_POLICY } from './src/policy/policyEngine.ts';
@@ -16,6 +17,7 @@ import {
   fetchLiveSepoliaBalance,
   estimateSepoliaTransactionFee,
   SEPOLIA_CHAIN_ID,
+  revalidateProposalBeforeExecution,
 } from './src/services/blockchainService.ts';
 import { db, ProofFlowDatabase } from './src/db/database.ts';
 import type {
@@ -118,6 +120,8 @@ app.post('/api/agent/analyze', async (req: Request, res: Response) => {
           })),
         },
         policyEvaluation,
+        plan: agentResult.plan,
+        executionTrace: agentResult.executionTrace,
       });
 
       const fullProposalRes = await db.getProposalById(createdRecord.id, fallbackWallet);
@@ -185,6 +189,8 @@ app.post('/api/agent/chat', async (req: Request, res: Response) => {
           })),
         },
         policyEvaluation,
+        plan: agentResult.plan,
+        executionTrace: agentResult.executionTrace,
       });
 
       const fullProposalRes = await db.getProposalById(createdRecord.id, fallbackWallet);
@@ -322,6 +328,21 @@ app.post('/api/proposals/:id/execute', async (req: Request, res: Response) => {
     if (proposal.policyEvaluation && proposal.policyEvaluation.hasBlockingViolations) {
       return res.status(400).json({
         error: 'POLICY_VIOLATION: Cannot execute proposal with blocking policy violations',
+      });
+    }
+
+    // SECURITY BOUNDARY: Pre-execution revalidation gate
+    // Revalidates spending caps, daily limits, and ensures material details have not changed
+    const reval = revalidateProposalBeforeExecution({
+      proposal,
+      currentPolicies,
+      expectedCommitmentHash: proposal.commitment?.sha256Hash,
+    });
+    if (!reval.canExecute) {
+      return res.status(400).json({
+        error: `REVALIDATION_FAILED: ${reval.reason}`,
+        code: reval.code,
+        requiresReapproval: reval.requiresReapproval,
       });
     }
 
@@ -638,14 +659,21 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    const distPath = path.resolve(__dirname, 'dist');
+    const indexPath = path.resolve(distPath, 'index.html');
+    app.use(express.static(distPath));
     app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(200).send('ProofFlow Server Ready. Waiting for build assets.');
+      }
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`ProofFlow Server running on http://localhost:${PORT}`);
+  const portNum = Number(PORT) || 3000;
+  app.listen(portNum, '0.0.0.0', () => {
+    console.log(`ProofFlow Server running on http://0.0.0.0:${portNum}`);
   });
 }
 

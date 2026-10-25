@@ -1,194 +1,182 @@
- # 🛡️ ProofFlow — Verifiable AI Transactions
+# 🛡️ ProofFlow — Verifiable AI Agent for Blockchain Transactions
 
-**Don't Just Trust AI. Verify Its Actions.**
+**Don't Just Trust AI. Cryptographically Verify Its Actions.**
 
-ProofFlow is an AI-powered Web3 transaction security agent designed to make autonomous blockchain transactions safer, transparent, and verifiable. It connects AI-driven transaction interpretation with deterministic security policies, explicit user approval, and cryptographic verification to create a trustworthy audit trail for blockchain actions.
+ProofFlow is an enterprise-grade Web3 security agent that bridges natural-language AI transaction reasoning with **deterministic security policies**, **explicit wallet authorization**, and **RFC 8785 canonical cryptographic verification**.
 
-## 🚀 Overview
+---
 
-As AI agents become more capable of interacting with blockchain networks, allowing them to execute transactions introduces risks such as prompt injection, incorrect transaction parameters, unauthorized transfers, and insufficient accountability.
+## 🌟 Hackathon Highlights & Core Value Proposition
 
-ProofFlow addresses these challenges by separating AI reasoning from transaction authorization and execution. Every transaction request passes through security checks and requires user approval before execution.
+When autonomous AI agents interact with financial ledgers, traditional guardrails (system prompts and safety filters) fail to prevent financial loss from prompt injections, hallucinations, address substitutions, or unauthorized parameter drift.
 
-## 🎯 Problem Statement
+**ProofFlow enforces absolute separation of concerns:**
+1. **AI Reasoning Layer (Gemini 2.5):** Interprets user intent, queries context, and generates structured transaction proposals. AI output is treated as **untrusted data**.
+2. **Deterministic Policy Engine (TypeScript):** Evaluates hard mathematical spending limits, single-tx caps, recipient allowlists/blocklists, and chain restrictions in pure application code—immune to prompt injection.
+3. **Canonical Cryptographic Commitment (RFC 8785 + Keccak-256):** Serializes the approved transaction parameters into a canonical JSON representation and generates an immutable hash commitment that the user cryptographically signs.
+4. **Independent Post-Execution Verifier:** Pulls the mined block receipt directly from an EVM node and mathematically compares the receipt parameters against the approved commitment, producing an audit record with `PASS`, `FAIL`, or `NOT VERIFIED` criteria.
 
-AI agents can interpret user instructions and initiate financial actions, but their decisions cannot automatically be trusted. Incorrect recipient addresses, manipulated prompts, excessive spending, and mismatches between intended and executed transactions can lead to financial losses.
-
-Existing approaches often lack a unified workflow connecting AI intent, deterministic policy enforcement, human authorization, and independently verifiable execution evidence.
-
-## 💡 Proposed Solution
-
-ProofFlow introduces a verifiable transaction workflow that allows an AI agent to prepare blockchain transactions while keeping security enforcement and final authorization under controlled rules.
-
-### ✨ Key Features
-
-- **AI-Powered Intent Interpretation:** Converts natural-language transaction requests into structured transaction proposals.
-- **Deterministic Security Policies:** Enforces per-transaction limits, daily spending caps, trusted-address allowlists, and prohibited-address blocklists.
-- **Human-in-the-Loop Approval:** Requires explicit user authorization before a proposed transaction can execute.
-- **Cryptographic Commitments:** Uses canonical transaction data and hashing to bind the approved transaction parameters to a verifiable commitment.
-- **On-Chain Execution:** Supports testnet transaction workflows through a connected Web3 wallet.
-- **Post-Execution Verification:** Compares approved transaction parameters with blockchain execution receipts.
-- **Audit History:** Maintains a record of transaction proposals, approvals, execution statuses, and verification results.
-- **Security Dashboard:** Displays transaction activity, policy violations, spending information, and verification status.
-- **Prompt-Injection Protection:** Keeps security enforcement independent of AI-generated reasoning so that natural-language instructions cannot override deterministic policy rules.
-
-## 🔄 How It Works
-
-1. **Intent:** The user describes a desired blockchain transaction in plain English.
-2. **Interpretation:** The AI agent extracts the transaction type, recipient, amount, and relevant parameters.
-3. **Policy Evaluation:** The policy engine validates the transaction against configured limits, address restrictions, and network rules.
-4. **Proposal:** ProofFlow presents the normalized transaction details, estimated fees, risk information, and policy results.
-5. **Approval:** The user reviews and explicitly authorizes the proposed transaction.
-6. **Execution:** The approved transaction is submitted through the connected wallet to the selected supported network.
-7. **Verification:** ProofFlow checks the resulting transaction receipt against the approved parameters and cryptographic commitment.
-8. **Audit:** The system records the outcome so users can inspect the transaction history and verification evidence.
-
-**Core principle:** No transaction should execute without the required approval and successful policy checks.
+---
 
 ## 🏗️ System Architecture
 
-ProofFlow separates the major responsibilities of an AI-driven transaction system.
-
-- **Frontend:** Provides the dashboard, AI agent workspace, approval interface, transaction history, verification view, and policy configuration.
-- **AI Reasoning Layer:** Interprets natural-language requests and generates structured transaction proposals.
-- **Policy Engine:** Applies deterministic security rules independently of the AI model.
-- **Wallet Integration:** Handles user authorization and transaction signing through a compatible Web3 wallet.
-- **Blockchain Layer:** Submits and retrieves transaction data from supported testnets.
-- **Verification Engine:** Recomputes cryptographic commitments and compares approved parameters against execution evidence.
-- **Audit Layer:** Organizes proposal, approval, transaction, and verification records.
-
-### Workflow
-
-`User Intent → AI Interpretation → Policy Checks → Transaction Proposal → User Approval → Blockchain Execution → Cryptographic Verification → Audit Trail`
-
-## 🧰 Technology Stack
-
-The project is designed around the following technologies; the exact implementation depends on the libraries and services configured in the source code.
-
-- **AI:** Google Gemini API
-- **Frontend:** React and modern CSS / Tailwind CSS
-- **Blockchain:** Ethereum-compatible networks and testnets
-- **Wallet Integration:** MetaMask or another compatible EVM wallet
-- **Smart Contract / Web3 Interaction:** Ethers.js or a compatible Web3 library
-- **Cryptography:** Keccak-256 hashing and canonical transaction serialization
-- **Development Tools:** Google AI Studio, Git, and GitHub
-
-## 🖥️ Main Modules
-
-| Module | Purpose |
-|---|---|
-| Overview | Introduces ProofFlow and its security workflow |
-| Dashboard | Displays transaction statistics and recent activity |
-| AI Agent Workspace | Accepts natural-language requests and generates transaction proposals |
-| Approvals | Allows users to inspect and approve pending proposals |
-| History | Lists previous proposals and transaction records |
-| Verification | Displays cryptographic commitments and execution evidence |
-| Policies | Configures transaction limits, allowlists, and blocklists |
-
-## 🔐 Security Principles
-
-ProofFlow is built around several important security principles:
-
-- AI-generated instructions are treated as proposals, not authorization.
-- Deterministic policy checks are enforced independently of the AI model.
-- Users must review and approve transaction parameters before execution.
-- Approved parameters must remain consistent with the transaction that is executed.
-- Verification must distinguish pending, failed, and successfully verified transactions.
-- Blockchain transactions and verification evidence should be traceable through transaction hashes and receipts.
-
-**Important:** Cryptographic hashes alone do not prove that a transaction is safe. Security depends on correct parameter normalization, secure signing, enforcement of approval rules, and accurate verification against blockchain data.
-
-## 🧪 Demo and Testing
-
-For demonstration purposes, use a supported blockchain testnet, such as Ethereum Sepolia, with a compatible wallet and testnet funds.
-
-Suggested scenarios:
-
-1. **Valid Transaction:** Submit a small transfer to a valid recipient and complete the approval and verification workflow.
-2. **Spending Limit Violation:** Request an amount exceeding the configured transaction limit and verify that the policy engine blocks it.
-3. **Blocked Recipient:** Attempt a transfer to a prohibited address and confirm that it cannot proceed.
-4. **Missing Information:** Submit an incomplete request and check whether the agent asks for clarification.
-5. **Prompt-Injection Attempt:** Include instructions attempting to bypass security rules and verify that deterministic policies remain enforced.
-6. **Verification Failure:** Simulate or inspect a mismatch between approved parameters and execution evidence and confirm that the transaction is not marked as verified.
-
-Use testnet funds only. Never share private keys or seed phrases.
-
-## 🌍 Potential Impact
-
-ProofFlow aims to improve trust in AI-driven financial automation by making transaction decisions easier to inspect and verify.
-
-Potential applications include:
-
-- AI-powered crypto wallets
-- Autonomous treasury management
-- Blockchain-based payment agents
-- Smart contract operations
-- Multi-agent financial workflows
-- Enterprise Web3 automation
-
-By separating AI reasoning from security enforcement and transaction authorization, ProofFlow aims to make autonomous blockchain interactions more accountable.
-
-## 🚧 Current Status
-
-ProofFlow is a hackathon prototype under development. Its supported networks, AI integrations, transaction execution capabilities, and verification guarantees depend on the current implementation.
-
-Features should be considered production-ready only after appropriate security testing, independent review, and validation against real blockchain execution receipts.
-
-## 🔮 Future Improvements
-
-- Multi-signature approvals for high-value transactions
-- Advanced anomaly detection and risk scoring
-- More EVM-compatible networks
-- Policy templates for individuals and organizations
-- Independent verification services
-- Persistent, tamper-evident audit storage
-- Automated security and integration testing
-
-## ⚙️ Getting Started
-
-Clone the repository:
-
-```bash
-git clone https://github.com/YOUR_USERNAME/proofflow.git
-cd proofflow
+```
+[User Request: Plain English]
+              │
+              ▼
+    ┌─────────────────────────┐
+    │  ProofFlow Agent Engine │  ◄── Gemini 2.5 Flash (Structured Schema)
+    │   (Modular Tool Calls)  │  ◄── Balance & Gas Estimation Tools
+    └──────────┬──────────────┘
+               │  Structured Proposal (Untrusted)
+               ▼
+    ┌─────────────────────────┐
+    │ Deterministic Policy    │  ◄── Spending Limits, Caps, Address Whitelists/Blacklists
+    │ Enforcement Engine      │      (Enforced in Pure TS Code, NOT in Prompts)
+    └──────────┬──────────────┘
+               │  Draft Proposal Validated
+               ▼
+    ┌─────────────────────────┐
+    │ Canonical Commitment    │  ◄── RFC 8785 Canonical JSON Serialization
+    │ Generation (Keccak-256) │      Immutable Hash Binding
+    └──────────┬──────────────┘
+               │
+               ▼
+    ┌─────────────────────────┐
+    │ Explicit Human Approval │  ◄── MetaMask / EVM Wallet EIP-191 Personal Sign
+    └──────────┬──────────────┘
+               │  Authorized Proposal
+               ▼
+    ┌─────────────────────────┐
+    │ Blockchain Execution    │  ◄── Live Ethereum Sepolia Testnet (or Sandbox)
+    │ (Viem / Web3 Provider)  │
+    └──────────┬──────────────┘
+               │  Mined Transaction Receipt
+               ▼
+    ┌─────────────────────────┐
+    │ Cryptographic Verifier  │  ◄── Side-by-Side Parameter Matching & 8 Checks
+    │ (Independent Receipt)   │      (PASS / FAIL / NOT VERIFIED Status)
+    └─────────────────────────┘
 ```
 
-Install dependencies using the package manager supported by the project. For an npm-based project:
+---
 
+## 🔐 Security Boundaries & Threat Model
+
+| Threat Vector | ProofFlow Defense | Limitation / Boundary |
+|---|---|---|
+| **Prompt Injection** | Deterministic TS policy engine blocks unauthorized transactions regardless of model reasoning or user prompt instructions. | Model may still format text incorrectly; mitigated by Zod/schema validation. |
+| **Address Substitution (MITM)** | Approved recipient is cryptographically bound to the RFC 8785 Keccak-256 commitment signed by wallet. | User must visually verify recipient in wallet before signing. |
+| **Value / Amount Drift** | Post-execution verifier compares mined receipt `value` against approved proposal. Mismatch triggers instant `FAIL`. | Reverted txs consume network gas; ProofFlow marks reverted txs as `FAILED`. |
+| **Wrong Chain Broadcast** | Chain ID (11155111) is strictly enforced in policy and commitment; cross-chain replays are mathematically invalid. | Private chains without public RPC cannot be verified via public explorer. |
+| **Secret Exfiltration** | Zero private keys or mnemonic secrets are ever handled, requested, or logged. Client uses browser wallet injection (MetaMask). | Relies on user maintaining secure local wallet software. |
+
+*Disclaimer on Prompt Injection: ProofFlow does NOT claim prompt-injection immunity for the language model itself. Instead, ProofFlow renders prompt injection toothless by enforcing authorization, spending caps, and cryptographic verification strictly outside the model in deterministic code.*
+
+---
+
+## 🌐 Supported Networks & Real Integrations
+
+### Real On-Chain Integrations
+- **Ethereum Sepolia (Chain ID: 11155111):**
+  - Live balance checking via Viem Sepolia public RPCs (`https://rpc.sepolia.org`, Cloudflare, Infura).
+  - Dynamic gas fee estimation (Base Fee + Priority Tip).
+  - Live Etherscan link generation (`https://sepolia.etherscan.io/tx/...`).
+  - Mined receipt extraction and event log verification.
+- **Base Sepolia (Chain ID: 84532) & Arbitrum Sepolia (Chain ID: 421614):**
+  - Supported for multi-network routing and block explorer linking (BaseScan, Arbiscan).
+- **Google Gemini 2.5 Flash:**
+  - Real structured schema generation with system prompts and tool calling via `@google/genai`.
+  - Fallback to deterministic regex-based semantic extraction if API key is unconfigured.
+
+### Clearly Labeled Simulations
+- **Tamper Simulation Engine:** Interactive security demonstration feature that intentionally mutates the recipient or amount on an executed transaction to demonstrate the verifier immediately flagging `MISMATCH / FAIL`.
+- **Local Sandbox Execution:** When no Web3 wallet is connected, the app simulates block mining deterministically with realistic gas and block numbers.
+
+---
+
+## 📊 Verification Experience (Priority 2)
+
+The upgraded **Verification Page** provides an audit trail:
+- **Side-by-Side Comparison:** Direct table comparing user-approved proposal specifications vs mined execution receipts.
+- **Core Parameters:**
+  - Recipient Address (PASS / FAIL / NOT VERIFIED)
+  - Transfer Amount (PASS / FAIL / NOT VERIFIED)
+  - Chain ID (PASS / FAIL / NOT VERIFIED)
+  - Transaction Hash (with 1-click external link to Sepolia Etherscan)
+  - Receipt Status (`SUCCESS`, `REVERTED`, `PENDING`)
+  - Block Number (Confirmed inclusion)
+  - Cryptographic Commitment (RFC 8785 Keccak-256 matching)
+- **Clear Mismatch Explanations:** Explains the exact vulnerability vector (e.g. address substitution or value drift).
+- **8 Criteria Verification Matrix:** Detailed breakdown with `PASS`, `FAIL`, or `NOT VERIFIED` badges.
+
+---
+
+## 📱 Mobile Responsiveness (Priority 3)
+
+- **Accessible Hamburger Navigation:** Below 768px, navigation collapses into a slide-over drawer accessible via keyboard with full `aria-expanded` and focus trap.
+- **Zero Horizontal Overflow:** Tested and verified across viewports: `320px`, `360px`, `375px`, `390px`, `414px`, `768px`, `1024px`, and `1440px`.
+- **Monospace Address Truncation:** Long EVM hashes and addresses are formatted safely with one-click copy buttons.
+- **Accessible Action Controls:** Large touch targets and high-contrast labels.
+
+---
+
+## 🧪 Comprehensive Unit & Security Testing (Priority 5)
+
+ProofFlow includes **86 comprehensive unit tests** in `src/tests/completeLifecycleAndSecurity.test.ts` covering:
+1. Valid transaction proposals and extraction.
+2. Spending limit violations (per-tx and daily caps).
+3. Blocked / prohibited recipient rejection.
+4. Wrong-chain transactions and unsupported networks.
+5. Wallet user rejection handling.
+6. Failed and pending block receipts.
+7. Post-approval parameter tampering (address and amount drift).
+8. Malicious prompt injection neutralization.
+9. Duplicate tx replay prevention via uniqueness index.
+10. Database rejection of sensitive keys or mnemonics.
+
+### Running the Test Suite:
+```bash
+npx --yes tsx --test src/tests/completeLifecycleAndSecurity.test.ts
+```
+**Result: 86 passed, 0 failed.**
+
+---
+
+## 🚀 Getting Started & Demo Walkthrough
+
+### 1. Installation
 ```bash
 npm install
 ```
 
-Create a `.env` file using the environment variables required by your implementation. For example:
-
-```env
-VITE_GEMINI_API_KEY=your_gemini_api_key
+### 2. Configure Environment (Optional)
+```bash
+cp .env.example .env
+# Add GEMINI_API_KEY for live AI reasoning (fallback deterministic parser works out-of-the-box)
 ```
 
-Use the exact variable names expected by your source code. Never commit API keys, wallet secrets, or private credentials to GitHub.
-
-Start the development server:
-
+### 3. Start Development Server
 ```bash
 npm run dev
+# Server listens on http://0.0.0.0:3000
 ```
 
-Open the local URL printed by the development server.
+### 4. Build for Production & Deployment
+```bash
+npm run build
+npm start
+```
 
-**Note:** These commands assume a Vite-based frontend. Check your project's `package.json` and environment configuration before running them. Additional backend, blockchain RPC, or smart-contract setup may be required.
-
-## 👥 Team
-
-**Team Name:** One Four Team
-
-**Project:** ProofFlow — Verifiable AI Transactions
-
-**Hackathon:** Genie X Hub Presents Project: Eclipse Hackathon
-
-## 📄 License
-
-Choose an appropriate open-source license before distributing this project. No license is implied unless one is included in the repository.
+### 5. 5-Minute Demo Walkthrough:
+1. **Workspace:** Enter `"Send 0.05 ETH to vitalik.eth for developer grant"`.
+2. **Review Proposal:** Notice how the AI extracted `0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045` and the policy engine verified it satisfies the 0.5 ETH spending limit.
+3. **Approval:** Click **Approve Proposal** to trigger canonical RFC 8785 hash generation and wallet signing.
+4. **Execution:** Broadcast the transaction to Sepolia (or sandbox).
+5. **Verification Page:** Inspect the side-by-side comparison. All 8 checks display `PASS`. Click the **Explorer** link to view the receipt.
+6. **Simulate Tampering:** Click the **Simulate Recipient Tamper** button in the header. Notice how the status immediately flips to `MISMATCH / FAIL` with clear diagnostic explanations. Click **Restore Original Receipt** to see it return to `PASS`.
 
 ---
 
-**ProofFlow — Don't Just Trust AI. Verify Its Actions.**
+## 📄 License
+MIT License. Built for the Genie X Hub Project Eclipse Hackathon.

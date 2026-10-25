@@ -28,6 +28,7 @@ import type {
   SupportedChainId,
   ExecutionReceipt,
 } from '../types/index.ts';
+import { ExecutionTraceTimeline } from '../components/ExecutionTraceTimeline.tsx';
 import {
   SEPOLIA_CHAIN_ID,
   estimateSepoliaTransactionFee,
@@ -876,6 +877,13 @@ export const ProposalApprovalPage: React.FC<ProposalApprovalProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* End-to-End Execution Trace Telemetry */}
+        {proposal.executionTrace && proposal.executionTrace.length > 0 && (
+          <div className="mt-6 rounded-xl border border-slate-800 bg-slate-950/70 p-4 sm:p-5 min-w-0">
+            <ExecutionTraceTimeline trace={proposal.executionTrace} />
           </div>
         )}
 

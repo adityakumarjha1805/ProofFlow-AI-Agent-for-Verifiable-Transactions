@@ -244,6 +244,60 @@ export type ProposalStatus =
   | 'VERIFIED'
   | 'VERIFICATION_FAILED';
 
+export type ExecutionTracePhase =
+  | 'REQUEST'
+  | 'PLAN'
+  | 'TOOL_CALL'
+  | 'POLICY_DECISION'
+  | 'USER_APPROVAL'
+  | 'EXECUTION'
+  | 'RECEIPT'
+  | 'VERIFICATION';
+
+export type ExecutionTraceStatus =
+  | 'PENDING'
+  | 'RUNNING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'SKIPPED';
+
+export interface ExecutionTraceItem {
+  id: string;
+  phase: ExecutionTracePhase;
+  title: string;
+  timestamp: string;
+  status: ExecutionTraceStatus;
+  isActualEvidence: boolean;
+  toolName?: string;
+  description?: string;
+  sanitizedInput?: Record<string, unknown> | string;
+  sanitizedOutput?: Record<string, unknown> | string;
+  errorDetails?: string;
+  durationMs?: number;
+}
+
+export interface PlanStep {
+  id: string;
+  stepNumber: number;
+  title: string;
+  toolToUse?: string;
+  description: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
+  rationale: string;
+  outcome?: string;
+}
+
+export interface AgentExecutionPlan {
+  id: string;
+  goal: string;
+  steps: PlanStep[];
+  currentStepIndex: number;
+  isComplete: boolean;
+  requiresClarification: boolean;
+  clarificationMessage?: string;
+  plannedAt: string;
+}
+
 export interface TransactionProposal {
   id: string;
   createdAt: string;
@@ -258,6 +312,8 @@ export interface TransactionProposal {
   execution?: ExecutionReceipt;
   verification?: VerificationAudit;
   approvalNotes?: string;
+  plan?: AgentExecutionPlan;
+  executionTrace?: ExecutionTraceItem[];
   deterministicEvaluation?: import('../policy/types.ts').DeterministicEvaluationResult;
 }
 

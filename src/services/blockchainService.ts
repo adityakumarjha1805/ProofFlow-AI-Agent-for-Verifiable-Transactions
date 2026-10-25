@@ -493,3 +493,184 @@ export function verifyLiveExecution(
 ): VerificationAudit {
   return verifyTransaction(intent, commitment, execution);
 }
+
+/**
+ * Safe, bounded exponential backoff retry helper strictly for idempotent read operations.
+ * NEVER use this for state-modifying transaction broadcasts!
+ */
+export async function retryIdempotentRpcOperation<T>(
+  operationName: string,
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  initialDelayMs = 300
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        const delay = initialDelayMs * Math.pow(2, attempt - 1) + Math.random() * 80;
+        await new Promise((res) => setTimeout(res, delay));
+      }
+    }
+  }
+  throw new Error(
+    `[RPC Failure] Idempotent operation "${operationName}" failed after ${maxRetries} attempts: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`
+  );
+}
+
+/**
+ * Failure Recovery: Checks whether a transaction hash was actually submitted or is pending in mempool/blocks.
+ * CRITICAL: Prevents duplicate transfers or double-spend if an RPC timeout occurs.
+ */
+export async function verifyTransactionSubmissionState(
+  txHash: Hash,
+  client: PublicClient = getSharedSepoliaClient()
+): Promise<{
+  isSubmitted: boolean;
+  status: 'PENDING_MEMPOOL' | 'MINED_SUCCESS' | 'MINED_REVERTED' | 'NOT_FOUND';
+  receipt?: TransactionReceipt;
+  transaction?: Transaction;
+  error?: string;
+}> {
+  try {
+    // 1. First check if a receipt is already mined
+    try {
+      const receipt = await client.getTransactionReceipt({ hash: txHash });
+      if (receipt) {
+        return {
+          isSubmitted: true,
+          status: receipt.status === 'success' ? 'MINED_SUCCESS' : 'MINED_REVERTED',
+          receipt,
+        };
+      }
+    } catch {
+      // Receipt not ready yet; check transaction in mempool
+    }
+
+    // 2. Check if transaction is in mempool
+    const tx = await client.getTransaction({ hash: txHash });
+    if (tx) {
+      return {
+        isSubmitted: true,
+        status: 'PENDING_MEMPOOL',
+        transaction: tx,
+      };
+    }
+
+    return {
+      isSubmitted: false,
+      status: 'NOT_FOUND',
+    };
+  } catch (err: unknown) {
+    return {
+      isSubmitted: false,
+      status: 'NOT_FOUND',
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Security Boundary: Revalidates the proposal immediately before execution.
+ * Checks that material parameters have not changed and limits have not been exceeded.
+ */
+export function revalidateProposalBeforeExecution(params: {
+  proposal: import('../types/index.ts').TransactionProposal;
+  currentPolicies: import('../types/index.ts').DeterministicPolicyConfig;
+  currentWalletBalanceEth?: string;
+  expectedCommitmentHash?: string;
+}): {
+  canExecute: boolean;
+  reason?: string;
+  requiresReapproval: boolean;
+  code?: 'PARAM_DRIFT' | 'POLICY_VIOLATION' | 'INSUFFICIENT_FUNDS' | 'ALREADY_EXECUTED' | 'NOT_APPROVED';
+} {
+  const { proposal, currentPolicies, currentWalletBalanceEth, expectedCommitmentHash } = params;
+
+  if (proposal.status === 'EXECUTED' || proposal.status === 'VERIFIED') {
+    return {
+      canExecute: false,
+      reason: 'Proposal has already been executed on-chain.',
+      requiresReapproval: false,
+      code: 'ALREADY_EXECUTED',
+    };
+  }
+
+  if (proposal.status !== 'APPROVED' || !proposal.commitment) {
+    return {
+      canExecute: false,
+      reason: 'Proposal requires explicit user approval before execution.',
+      requiresReapproval: true,
+      code: 'NOT_APPROVED',
+    };
+  }
+
+  // 1. Check if commitment matches expected (detect parameter tampering after approval)
+  if (
+    expectedCommitmentHash &&
+    proposal.commitment.sha256Hash !== expectedCommitmentHash &&
+    proposal.commitment.commitmentHash !== expectedCommitmentHash
+  ) {
+    return {
+      canExecute: false,
+      reason: 'Material transaction parameters altered after approval! Renewed approval required.',
+      requiresReapproval: true,
+      code: 'PARAM_DRIFT',
+    };
+  }
+
+  // 2. Check policy re-evaluation (e.g. daily limit may have been depleted by another transaction)
+  const amountEth = parseFloat(proposal.intent.amount || '0');
+  if (amountEth > currentPolicies.maxSingleTxEth) {
+    return {
+      canExecute: false,
+      reason: `Amount (${amountEth} ETH) exceeds current single transaction limit (${currentPolicies.maxSingleTxEth} ETH).`,
+      requiresReapproval: true,
+      code: 'POLICY_VIOLATION',
+    };
+  }
+
+  if (currentPolicies.currentDailySpentEth + amountEth > currentPolicies.maxDailyTxEth) {
+    return {
+      canExecute: false,
+      reason: `Transfer of ${amountEth} ETH would exceed daily limit (${currentPolicies.maxDailyTxEth} ETH). Currently spent: ${currentPolicies.currentDailySpentEth} ETH.`,
+      requiresReapproval: true,
+      code: 'POLICY_VIOLATION',
+    };
+  }
+
+  // 3. Check blocked recipients
+  const recipient = (proposal.intent.recipient || '').toLowerCase();
+  if (currentPolicies.blockedAddresses.map((a) => a.toLowerCase()).includes(recipient)) {
+    return {
+      canExecute: false,
+      reason: `Recipient ${proposal.intent.recipient} is on the deterministic prohibited address blacklist.`,
+      requiresReapproval: true,
+      code: 'POLICY_VIOLATION',
+    };
+  }
+
+  // 4. Check wallet solvency if balance provided
+  if (currentWalletBalanceEth) {
+    const balance = parseFloat(currentWalletBalanceEth);
+    const estimatedGas = parseFloat(proposal.intent.estimatedGasEth || '0.0005');
+    if (balance < amountEth + estimatedGas) {
+      return {
+        canExecute: false,
+        reason: `Insufficient balance: ${balance} ETH available, but ${amountEth + estimatedGas} ETH required.`,
+        requiresReapproval: false,
+        code: 'INSUFFICIENT_FUNDS',
+      };
+    }
+  }
+
+  return {
+    canExecute: true,
+    requiresReapproval: false,
+  };
+}

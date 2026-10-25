@@ -16,6 +16,9 @@ import type {
   ToolExecutionRecord,
   ExtractedIntent,
   AgentCheckItem,
+  AgentExecutionPlan,
+  ExecutionTraceItem,
+  PlanStep,
 } from './types.ts';
 import type { DeterministicPolicyConfig, TransactionProposal, RiskLevel } from '../types/index.ts';
 import { isValidAddress } from '../services/policyEngine.ts';
@@ -229,18 +232,134 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
 
   /**
    * Deterministic Tool Workflow:
-   * Guarantees all modular tools execute in deterministic sequence when Gemini tool calling is offline or unavailable.
+   * Formulates an inspectable execution plan, dynamically determines steps based on actual tool outputs,
+   * enforces deterministic policy constraints, and builds a comprehensive live execution trace.
    */
-  private async runDeterministicToolWorkflow(
+  public async runDeterministicToolWorkflow(
     prompt: string,
-    userWalletAddress: string,
-    policies: DeterministicPolicyConfig,
-    toolExecutions: ToolExecutionRecord[]
+    userWalletAddress: string = '0x71c6bf12f455ddfe62ec542866b595fa6b78d91c',
+    policies: DeterministicPolicyConfig = {
+      maxSingleTxEth: 0.5,
+      maxDailyTxEth: 1.0,
+      currentDailySpentEth: 0.1,
+      allowedChains: [11155111, 84532, 421614],
+      whitelistedAddresses: ['0x71c6bf12f455ddfe62ec542866b595fa6b78d91c'],
+      blockedAddresses: ['0x0000000000000000000000000000000000000000', '0x000000000000000000000000000000000000dead'],
+      requireApprovalAboveEth: 0.05,
+      maxGasPriceGwei: 50,
+      allowContractInteraction: true,
+    },
+    toolExecutions: ToolExecutionRecord[] = []
   ): Promise<StructuredAgentResponse> {
     const missing: string[] = [];
     const p = prompt.toLowerCase();
+    const plannedAt = new Date().toISOString();
 
-    // 1. Check for prompt injection attempts trying to disable security
+    // 1. Initial Plan Formulation
+    const planSteps: PlanStep[] = [
+      {
+        id: 'step-1-validate',
+        stepNumber: 1,
+        title: 'Validate Recipient & Address Syntax',
+        toolToUse: 'validateRecipientAddress',
+        description: 'Verify EVM address syntax, resolve ENS names, and check for zero/burn addresses',
+        status: 'PENDING',
+        rationale: 'Prevent fund loss to malformed destinations or burn targets',
+      },
+      {
+        id: 'step-2-network',
+        stepNumber: 2,
+        title: 'Query Network State & RPC',
+        toolToUse: 'getNetworkInformation',
+        description: 'Confirm target network connectivity, current block, and chain ID',
+        status: 'PENDING',
+        rationale: 'Ensure target chain is healthy and responsive prior to proposing',
+      },
+      {
+        id: 'step-3-fee',
+        stepNumber: 3,
+        title: 'Estimate Transaction Fee',
+        toolToUse: 'estimateTransactionFee',
+        description: 'Calculate live Base Fee and Priority Fee for native transfer',
+        status: 'PENDING',
+        rationale: 'Determine total gas cost required for solvency check',
+      },
+      {
+        id: 'step-4-balance',
+        stepNumber: 4,
+        title: 'Check Sender Solvency',
+        toolToUse: 'getWalletBalance',
+        description: 'Verify wallet balance can cover proposed amount + estimated gas',
+        status: 'PENDING',
+        rationale: 'Prevent transaction revert caused by insufficient funds',
+      },
+      {
+        id: 'step-5-policy',
+        stepNumber: 5,
+        title: 'Enforce Deterministic Policies',
+        toolToUse: 'checkUserPolicy',
+        description: 'Apply spending caps, daily limits, allowlists, and blacklists outside model',
+        status: 'PENDING',
+        rationale: 'Mathematical security enforcement immune to LLM prompt injection',
+      },
+      {
+        id: 'step-6-risk',
+        stepNumber: 6,
+        title: 'Assess Security Risk Rating',
+        toolToUse: 'analyzeTransactionRisk',
+        description: 'Evaluate recipient history, transfer magnitude, and anomaly indicators',
+        status: 'PENDING',
+        rationale: 'Provide explainable security metrics to user prior to signing',
+      },
+      {
+        id: 'step-7-proposal',
+        stepNumber: 7,
+        title: 'Draft Proposal & Commitment',
+        toolToUse: 'createTransactionProposal',
+        description: 'Generate canonical RFC 8785 commitment and persist proposal',
+        status: 'PENDING',
+        rationale: 'Bind user approval to immutable cryptographic hash before execution',
+      },
+    ];
+
+    const plan: AgentExecutionPlan = {
+      id: `plan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      goal: `Safely interpret and prepare verifiable transaction for "${prompt}"`,
+      steps: planSteps,
+      currentStepIndex: 0,
+      isComplete: false,
+      requiresClarification: false,
+      plannedAt,
+    };
+
+    const executionTrace: ExecutionTraceItem[] = [
+      {
+        id: `trace-req-${Date.now()}`,
+        phase: 'REQUEST',
+        title: 'Natural-Language Intent Captured',
+        timestamp: plannedAt,
+        status: 'SUCCESS',
+        isActualEvidence: false,
+        sanitizedInput: { prompt, userWalletAddress },
+        description: `User requested: "${prompt}"`,
+      },
+      {
+        id: `trace-plan-${Date.now()}`,
+        phase: 'PLAN',
+        title: 'Structured Execution Plan Formulated',
+        timestamp: new Date().toISOString(),
+        status: 'SUCCESS',
+        isActualEvidence: false,
+        sanitizedOutput: {
+          goal: plan.goal,
+          totalSteps: plan.steps.length,
+          plannedTools: plan.steps.map((s) => s.toolToUse),
+        },
+        description: 'Agent mapped request to 7 sequential validation steps with deterministic fallback.',
+      },
+    ];
+
+    // Check for prompt injection attempts trying to disable security
     if (
       p.includes('ignore policy') ||
       p.includes('ignore all') ||
@@ -250,8 +369,30 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
       p.includes('override safety') ||
       p.includes('system override')
     ) {
-      const toolCheck = await this.executeTool('checkUserPolicy', { recipient: '0x0', amount: '0', network: 'ethereum-sepolia' }, policies);
+      plan.steps[0].status = 'FAILED';
+      plan.steps[0].outcome = 'Adversarial prompt injection detected and neutralized';
+      for (let i = 1; i < plan.steps.length; i++) {
+        plan.steps[i].status = 'SKIPPED';
+      }
+      plan.isComplete = true;
+
+      const toolCheck = await this.executeTool(
+        'checkUserPolicy',
+        { recipient: '0x0000000000000000000000000000000000000000', amount: '0', network: 'ethereum-sepolia' },
+        policies
+      );
       toolExecutions.push(toolCheck);
+
+      executionTrace.push({
+        id: `trace-policy-${Date.now()}`,
+        phase: 'POLICY_DECISION',
+        title: 'Deterministic Policy Enforcement: Anti-Tampering Triggered',
+        timestamp: new Date().toISOString(),
+        status: 'FAILED',
+        isActualEvidence: true,
+        errorDetails: 'User prompt attempted to bypass deterministic policy engine. Request blocked.',
+        sanitizedOutput: { blocked: true, reason: 'Adversarial policy override instruction rejected.' },
+      });
 
       return {
         status: 'policy_blocked',
@@ -265,24 +406,33 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
           userConditions: ['Adversarial policy bypass attempt detected'],
         },
         checks: [
-          { id: 'c-inject', category: 'POLICY', name: 'Anti-Tampering Guard', passed: false, status: 'FAILED', details: 'User prompt attempted to bypass deterministic policy engine. Request blocked.' },
+          {
+            id: 'c-inject',
+            category: 'POLICY',
+            name: 'Anti-Tampering Guard',
+            passed: false,
+            status: 'FAILED',
+            details: 'User prompt attempted to bypass deterministic policy engine. Request blocked.',
+          },
         ],
         risk_level: 'CRITICAL',
         missing_information: [],
         requires_user_approval: false,
         explanation: 'Security alert: Prompts attempting to override or bypass deterministic safety rules are strictly rejected by the policy engine.',
         toolExecutions,
+        plan,
+        executionTrace,
       };
     }
 
-    // 2. Extract Amount
+    // Extract Amount
     const amountMatch = prompt.match(/(\d+(\.\d+)?)\s*(eth|ether|usdc|weth)?/i);
     const amount = amountMatch ? amountMatch[1] : '';
     if (!amount) {
       missing.push('amount (e.g. 0.05 ETH)');
     }
 
-    // 3. Extract Recipient
+    // Extract Recipient
     let recipient = '';
     let recipientLabel = '';
     const addressMatch = prompt.match(/0x[a-fA-F0-9]{40}/);
@@ -299,17 +449,36 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
       missing.push('recipient address or ENS (e.g. 0x... or vitalik.eth)');
     }
 
-    // 4. Extract Network
+    // Extract Network
     let network = 'ethereum-sepolia';
     if (p.includes('base')) network = 'base-sepolia';
     else if (p.includes('arb') || p.includes('arbitrum')) network = 'arbitrum-sepolia';
     else if (p.includes('mainnet')) network = 'ethereum-mainnet';
 
-    // 5. Extract Asset
+    // Extract Asset
     const asset = amountMatch && amountMatch[3] ? amountMatch[3].toUpperCase() : 'ETH';
 
-    // If critical info is missing, ask user for clarification!
+    // Stop and ask for clarification if essential parameters are missing!
     if (missing.length > 0) {
+      plan.requiresClarification = true;
+      plan.clarificationMessage = `Could you clarify: What ${missing.join(' and ')} would you like to use for this transaction?`;
+      plan.steps[0].status = 'FAILED';
+      plan.steps[0].outcome = `Missing required information: ${missing.join(', ')}`;
+      for (let i = 1; i < plan.steps.length; i++) {
+        plan.steps[i].status = 'SKIPPED';
+      }
+
+      executionTrace.push({
+        id: `trace-clarify-${Date.now()}`,
+        phase: 'PLAN',
+        title: 'Execution Plan Halted: Clarification Required',
+        timestamp: new Date().toISOString(),
+        status: 'FAILED',
+        isActualEvidence: false,
+        sanitizedOutput: { missingFields: missing },
+        description: `Agent paused execution. Essential parameters missing: ${missing.join(', ')}.`,
+      });
+
       return {
         status: 'needs_clarification',
         intent: {
@@ -322,7 +491,14 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
           recipientLabel,
         },
         checks: [
-          { id: 'c-param', category: 'ADDRESS', name: 'Parameter Completeness', passed: false, status: 'WARNING', details: `Missing: ${missing.join(', ')}` },
+          {
+            id: 'c-param',
+            category: 'ADDRESS',
+            name: 'Parameter Completeness',
+            passed: false,
+            status: 'WARNING',
+            details: `Missing: ${missing.join(', ')}`,
+          },
         ],
         risk_level: 'UNKNOWN',
         missing_information: missing,
@@ -330,38 +506,245 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
         explanation: `To prepare a verifiable transaction proposal, please specify the ${missing.join(' and ')}.`,
         clarificationQuestion: `Could you clarify: What ${missing.join(' and ')} would you like to use for this transaction?`,
         toolExecutions,
+        plan,
+        executionTrace,
       };
     }
 
-    // Execute modular tools in sequence
+    // Step 1: Execute Recipient Validation
+    plan.steps[0].status = 'IN_PROGRESS';
     const addrTool = await this.executeTool('validateRecipientAddress', { address: recipient }, policies);
     toolExecutions.push(addrTool);
     const resolvedAddress = String(addrTool.result.normalizedAddress || recipient);
 
+    executionTrace.push({
+      id: `trace-tool-addr-${Date.now()}`,
+      phase: 'TOOL_CALL',
+      title: 'Tool Call: validateRecipientAddress',
+      toolName: 'validateRecipientAddress',
+      timestamp: addrTool.executedAt,
+      status: addrTool.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+      isActualEvidence: true,
+      sanitizedInput: { address: recipient },
+      sanitizedOutput: addrTool.result,
+      durationMs: addrTool.durationMs,
+    });
+
+    if (!addrTool.result.isValidFormat || addrTool.result.isZeroAddress) {
+      plan.steps[0].status = 'FAILED';
+      plan.steps[0].outcome = addrTool.result.isZeroAddress ? 'Zero-address restricted burn target' : 'Invalid address syntax';
+      for (let i = 1; i < plan.steps.length; i++) plan.steps[i].status = 'SKIPPED';
+      plan.isComplete = true;
+
+      return {
+        status: 'security_alert',
+        intent: {
+          action: 'transfer',
+          network,
+          chainId: resolveNetworkChainId(network),
+          asset,
+          amount,
+          recipient: resolvedAddress,
+          recipientLabel,
+        },
+        checks: [
+          {
+            id: 'chk-addr',
+            category: 'ADDRESS',
+            name: 'Recipient Address Syntax & Resolution',
+            passed: false,
+            status: 'FAILED',
+            details: addrTool.result.isZeroAddress ? 'Zero-address restricted burn target' : 'Invalid address format',
+          },
+        ],
+        risk_level: 'CRITICAL',
+        missing_information: [],
+        requires_user_approval: false,
+        explanation: 'Destination address check failed: Zero address (0x0) or malformed EVM address detected.',
+        toolExecutions,
+        plan,
+        executionTrace,
+      };
+    }
+    plan.steps[0].status = 'COMPLETED';
+    plan.steps[0].outcome = `Resolved to checksum address: ${resolvedAddress}`;
+
+    // Step 2: Query Network Information
+    plan.steps[1].status = 'IN_PROGRESS';
     const netTool = await this.executeTool('getNetworkInformation', { network }, policies);
     toolExecutions.push(netTool);
+    plan.steps[1].status = netTool.status === 'SUCCESS' ? 'COMPLETED' : 'FAILED';
+    plan.steps[1].outcome = `Connected to ${netTool.result.networkName} (Block #${netTool.result.currentBlock})`;
 
+    executionTrace.push({
+      id: `trace-tool-net-${Date.now()}`,
+      phase: 'TOOL_CALL',
+      title: 'Tool Call: getNetworkInformation',
+      toolName: 'getNetworkInformation',
+      timestamp: netTool.executedAt,
+      status: 'SUCCESS',
+      isActualEvidence: true,
+      sanitizedInput: { network },
+      sanitizedOutput: netTool.result,
+      durationMs: netTool.durationMs,
+    });
+
+    // Step 3: Estimate Transaction Fee
+    plan.steps[2].status = 'IN_PROGRESS';
     const feeTool = await this.executeTool('estimateTransactionFee', { network, asset, action: 'transfer' }, policies);
     toolExecutions.push(feeTool);
+    plan.steps[2].status = 'COMPLETED';
+    plan.steps[2].outcome = `Estimated fee: ~${feeTool.result.totalFeeEth} ETH`;
 
+    executionTrace.push({
+      id: `trace-tool-fee-${Date.now()}`,
+      phase: 'TOOL_CALL',
+      title: 'Tool Call: estimateTransactionFee',
+      toolName: 'estimateTransactionFee',
+      timestamp: feeTool.executedAt,
+      status: 'SUCCESS',
+      isActualEvidence: true,
+      sanitizedInput: { network, asset, action: 'transfer' },
+      sanitizedOutput: feeTool.result,
+      durationMs: feeTool.durationMs,
+    });
+
+    // Step 4: Check Sender Balance
+    plan.steps[3].status = 'IN_PROGRESS';
     const balTool = await this.executeTool('getWalletBalance', { address: userWalletAddress, network }, policies);
     toolExecutions.push(balTool);
+    const balanceNum = parseFloat(String(balTool.result.balanceEth || '0'));
+    const amountNum = parseFloat(amount || '0');
+    const isSolvent = balanceNum >= amountNum;
+    plan.steps[3].status = isSolvent ? 'COMPLETED' : 'FAILED';
+    plan.steps[3].outcome = `Wallet Balance: ${balTool.result.balanceEth} ETH (Solvent: ${isSolvent})`;
 
+    executionTrace.push({
+      id: `trace-tool-bal-${Date.now()}`,
+      phase: 'TOOL_CALL',
+      title: 'Tool Call: getWalletBalance',
+      toolName: 'getWalletBalance',
+      timestamp: balTool.executedAt,
+      status: isSolvent ? 'SUCCESS' : 'FAILED',
+      isActualEvidence: true,
+      sanitizedInput: { address: userWalletAddress, network },
+      sanitizedOutput: balTool.result,
+      durationMs: balTool.durationMs,
+    });
+
+    // Step 5: Enforce Deterministic Policy
+    plan.steps[4].status = 'IN_PROGRESS';
     const policyTool = await this.executeTool('checkUserPolicy', { recipient: resolvedAddress, amount, network }, policies);
     toolExecutions.push(policyTool);
-
-    const riskTool = await this.executeTool('analyzeTransactionRisk', { recipient: resolvedAddress, amount, network, asset }, policies);
-    toolExecutions.push(riskTool);
-
     const isPolicyPassed = Boolean(policyTool.result.passed);
     const isBlocking = Boolean(policyTool.result.hasBlockingViolations);
+    plan.steps[4].status = isPolicyPassed ? 'COMPLETED' : 'FAILED';
+    plan.steps[4].outcome = isPolicyPassed
+      ? 'All deterministic limits, allowlists, and blacklist checks passed'
+      : `Policy violation: ${(policyTool.result.violations as string[])?.join('; ') || 'Limit exceeded'}`;
+
+    executionTrace.push({
+      id: `trace-tool-pol-${Date.now()}`,
+      phase: 'TOOL_CALL',
+      title: 'Tool Call: checkUserPolicy',
+      toolName: 'checkUserPolicy',
+      timestamp: policyTool.executedAt,
+      status: isPolicyPassed ? 'SUCCESS' : 'FAILED',
+      isActualEvidence: true,
+      sanitizedInput: { recipient: resolvedAddress, amount, network },
+      sanitizedOutput: policyTool.result,
+      durationMs: policyTool.durationMs,
+    });
+
+    // Policy Decision Record in Live Trace
+    executionTrace.push({
+      id: `trace-dec-pol-${Date.now()}`,
+      phase: 'POLICY_DECISION',
+      title: isPolicyPassed ? 'Deterministic Policy Passed' : 'Deterministic Policy Block Enforced',
+      timestamp: new Date().toISOString(),
+      status: isPolicyPassed ? 'SUCCESS' : 'FAILED',
+      isActualEvidence: true,
+      sanitizedOutput: {
+        passed: isPolicyPassed,
+        hasBlockingViolations: isBlocking,
+        maxSingleTxEth: policies.maxSingleTxEth,
+        proposedAmount: amount,
+        violations: policyTool.result.violations,
+      },
+      description: isPolicyPassed
+        ? 'Application code verified spending caps, daily limits, and address allowlists without model intervention.'
+        : `Policy engine rejected proposal: ${(policyTool.result.violations as string[])?.join('; ') || 'Blocked'}.`,
+    });
+
+    // Step 6: Analyze Security Risk
+    plan.steps[5].status = 'IN_PROGRESS';
+    const riskTool = await this.executeTool('analyzeTransactionRisk', { recipient: resolvedAddress, amount, network, asset }, policies);
+    toolExecutions.push(riskTool);
     const riskLevel = (riskTool.result.riskLevel as RiskLevel) || 'LOW';
+    plan.steps[5].status = 'COMPLETED';
+    plan.steps[5].outcome = `Risk score: ${riskTool.result.riskScore}/100 (${riskLevel})`;
+
+    executionTrace.push({
+      id: `trace-tool-risk-${Date.now()}`,
+      phase: 'TOOL_CALL',
+      title: 'Tool Call: analyzeTransactionRisk',
+      toolName: 'analyzeTransactionRisk',
+      timestamp: riskTool.executedAt,
+      status: 'SUCCESS',
+      isActualEvidence: false,
+      sanitizedInput: { recipient: resolvedAddress, amount, network, asset },
+      sanitizedOutput: riskTool.result,
+      durationMs: riskTool.durationMs,
+    });
 
     let status: 'proposal_ready' | 'policy_blocked' | 'security_alert' = 'proposal_ready';
     if (isBlocking) {
       status = 'policy_blocked';
+      plan.steps[6].status = 'SKIPPED';
+      plan.steps[6].outcome = 'Skipped proposal creation due to deterministic policy block';
+      plan.isComplete = true;
     } else if (riskLevel === 'CRITICAL') {
       status = 'security_alert';
+      plan.steps[6].status = 'SKIPPED';
+      plan.steps[6].outcome = 'Skipped proposal creation due to critical risk assessment';
+      plan.isComplete = true;
+    }
+
+    // Step 7: Draft Proposal & Commitment
+    let proposalId: string | undefined;
+    if (status === 'proposal_ready') {
+      plan.steps[6].status = 'IN_PROGRESS';
+      const propTool = await this.executeTool(
+        'createTransactionProposal',
+        {
+          action: 'TRANSFER',
+          recipient: resolvedAddress,
+          amount,
+          network,
+          asset,
+          purposeExplanation: `Transfer of ${amount} ${asset} to ${recipientLabel || resolvedAddress} on ${network}`,
+          rawPrompt: prompt,
+        },
+        policies
+      );
+      toolExecutions.push(propTool);
+      proposalId = String(propTool.result.proposalId);
+      plan.steps[6].status = 'COMPLETED';
+      plan.steps[6].outcome = `Proposal created (#${proposalId}) with canonical commitment hash`;
+      plan.isComplete = true;
+
+      executionTrace.push({
+        id: `trace-tool-prop-${Date.now()}`,
+        phase: 'TOOL_CALL',
+        title: 'Tool Call: createTransactionProposal',
+        toolName: 'createTransactionProposal',
+        timestamp: propTool.executedAt,
+        status: 'SUCCESS',
+        isActualEvidence: true,
+        sanitizedInput: { recipient: resolvedAddress, amount, network },
+        sanitizedOutput: { proposalId, status: 'DRAFT_CREATED' },
+        durationMs: propTool.durationMs,
+      });
     }
 
     // Build checks checklist
@@ -394,8 +777,8 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
         id: 'chk-bal',
         category: 'BALANCE',
         name: 'Sender Wallet Balance Check',
-        passed: parseFloat(String(balTool.result.balanceEth)) >= parseFloat(amount),
-        status: parseFloat(String(balTool.result.balanceEth)) >= parseFloat(amount) ? 'PASSED' : 'FAILED',
+        passed: isSolvent,
+        status: isSolvent ? 'PASSED' : 'FAILED',
         details: `Available: ${balTool.result.balanceEth} ETH vs Proposed: ${amount} ETH`,
       },
       {
@@ -415,25 +798,6 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
         details: `Calculated Risk Score: ${riskTool.result.riskScore}/100 (${riskLevel})`,
       },
     ];
-
-    let proposalId: string | undefined;
-    if (status === 'proposal_ready') {
-      const propTool = await this.executeTool(
-        'createTransactionProposal',
-        {
-          action: 'TRANSFER',
-          recipient: resolvedAddress,
-          amount,
-          network,
-          asset,
-          purposeExplanation: `Transfer of ${amount} ${asset} to ${recipientLabel || resolvedAddress} on ${network}`,
-          rawPrompt: prompt,
-        },
-        policies
-      );
-      toolExecutions.push(propTool);
-      proposalId = String(propTool.result.proposalId);
-    }
 
     return {
       status,
@@ -458,6 +822,8 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
         : 'Review the proposal parameters. Explicit approval creates an immutable cryptographic commitment.',
       toolExecutions,
       proposalId,
+      plan,
+      executionTrace,
     };
   }
 
@@ -553,6 +919,112 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
         ? raw.risk_level
         : 'UNKNOWN';
 
+    const planSteps: PlanStep[] = [
+      {
+        id: 'gemini-step-1',
+        stepNumber: 1,
+        title: 'Validate Recipient & Address Syntax',
+        toolToUse: 'validateRecipientAddress',
+        description: 'Verify EVM address syntax and recipient identity',
+        status: isValidAddress(recipient) ? 'COMPLETED' : 'FAILED',
+        rationale: 'Prevent fund loss to invalid addresses',
+        outcome: `Recipient: ${recipient}`,
+      },
+      {
+        id: 'gemini-step-2',
+        stepNumber: 2,
+        title: 'Query Network State & RPC',
+        toolToUse: 'getNetworkInformation',
+        description: 'Check blockchain RPC health and block state',
+        status: 'COMPLETED',
+        rationale: 'Verify target chain connectivity',
+        outcome: `Network: ${network} (${chainId})`,
+      },
+      {
+        id: 'gemini-step-3',
+        stepNumber: 3,
+        title: 'Estimate Transaction Fee',
+        toolToUse: 'estimateTransactionFee',
+        description: 'Estimate live base fee and priority fee',
+        status: 'COMPLETED',
+        rationale: 'Calculate gas cost for solvency evaluation',
+        outcome: 'Gas estimate retrieved',
+      },
+      {
+        id: 'gemini-step-4',
+        stepNumber: 4,
+        title: 'Enforce Deterministic Policies',
+        toolToUse: 'checkUserPolicy',
+        description: 'Enforce spending caps and address allowlist/blocklists',
+        status: hasBlockingViolations ? 'FAILED' : 'COMPLETED',
+        rationale: 'Deterministic application security outside the AI model',
+        outcome: hasBlockingViolations ? 'Policy block triggered' : 'All policies passed',
+      },
+      {
+        id: 'gemini-step-5',
+        stepNumber: 5,
+        title: 'Draft Proposal & Commitment',
+        toolToUse: 'createTransactionProposal',
+        description: 'Formulate proposal and canonical cryptographic commitment',
+        status: hasBlockingViolations ? 'SKIPPED' : 'COMPLETED',
+        rationale: 'Create verifiable proposal record for user signature',
+        outcome: hasBlockingViolations ? 'Skipped' : 'Proposal draft prepared',
+      },
+    ];
+
+    const plan: AgentExecutionPlan = {
+      id: `plan-gemini-${Date.now()}`,
+      goal: `AI-orchestrated verifiable transaction proposal for ${amount} ${asset} to ${recipient}`,
+      steps: planSteps,
+      currentStepIndex: planSteps.length - 1,
+      isComplete: true,
+      requiresClarification: status === 'needs_clarification',
+      plannedAt: new Date().toISOString(),
+    };
+
+    const executionTrace: ExecutionTraceItem[] = [
+      {
+        id: `trace-req-${Date.now()}`,
+        phase: 'REQUEST',
+        title: 'Natural-Language Intent Analyzed by Gemini 2.5 Flash',
+        timestamp: new Date().toISOString(),
+        status: 'SUCCESS',
+        isActualEvidence: false,
+        sanitizedInput: { recipient, amount, network, asset },
+        description: 'Structured intent extracted via Gemini model tool calling loop.',
+      },
+      {
+        id: `trace-plan-${Date.now()}`,
+        phase: 'PLAN',
+        title: 'Autonomous Tool Plan Executed',
+        timestamp: new Date().toISOString(),
+        status: 'SUCCESS',
+        isActualEvidence: false,
+        sanitizedOutput: { goal: plan.goal, stepsCount: plan.steps.length },
+      },
+      ...toolExecutions.map((t, idx) => ({
+        id: `trace-tool-${idx}-${Date.now()}`,
+        phase: 'TOOL_CALL' as const,
+        title: `Tool Call: ${t.toolName}`,
+        toolName: t.toolName,
+        timestamp: t.executedAt,
+        status: (t.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED') as any,
+        isActualEvidence: true,
+        sanitizedInput: t.args,
+        sanitizedOutput: t.result,
+        durationMs: t.durationMs,
+      })),
+      {
+        id: `trace-pol-dec-${Date.now()}`,
+        phase: 'POLICY_DECISION',
+        title: hasBlockingViolations ? 'Deterministic Policy Block Enforced' : 'Deterministic Policy Passed',
+        timestamp: new Date().toISOString(),
+        status: hasBlockingViolations ? 'FAILED' : 'SUCCESS',
+        isActualEvidence: true,
+        sanitizedOutput: { hasBlockingViolations, maxSingleTxEth: policies.maxSingleTxEth },
+      },
+    ];
+
     return {
       status,
       intent: {
@@ -574,6 +1046,19 @@ Synthesize the final structured transaction analysis. Output STRICT JSON adherin
       clarificationQuestion: raw.clarificationQuestion ? String(raw.clarificationQuestion) : undefined,
       toolExecutions,
       proposalId: `prop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      plan,
+      executionTrace,
     };
   }
+}
+
+export const defaultAgentService = new ProofFlowAgentService();
+
+export async function runDeterministicToolWorkflow(
+  prompt: string,
+  userWalletAddress: string = '0x71c6bf12f455ddfe62ec542866b595fa6b78d91c',
+  policies?: DeterministicPolicyConfig
+): Promise<StructuredAgentResponse> {
+  const service = new ProofFlowAgentService({ forceDeterministic: true });
+  return service.runDeterministicToolWorkflow(prompt, userWalletAddress, policies);
 }

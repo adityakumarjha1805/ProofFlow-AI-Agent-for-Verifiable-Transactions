@@ -1,4 +1,13 @@
-import type { SupportedChainId, RiskLevel, DeterministicPolicyConfig } from '../types/index.ts';
+import type {
+  SupportedChainId,
+  RiskLevel,
+  DeterministicPolicyConfig,
+  AgentExecutionPlan,
+  ExecutionTraceItem,
+  PlanStep,
+} from '../types/index.ts';
+
+export type { AgentExecutionPlan, ExecutionTraceItem, PlanStep };
 
 export type AgentActionType = 'transfer' | 'contract_call' | 'token_swap' | 'approve' | 'unknown';
 
@@ -53,6 +62,8 @@ export interface StructuredAgentResponse {
   toolExecutions: ToolExecutionRecord[];
   clarificationQuestion?: string;
   proposalId?: string;
+  plan?: AgentExecutionPlan;
+  executionTrace?: ExecutionTraceItem[];
 }
 
 export interface ConversationMessage {
@@ -62,4 +73,6 @@ export interface ConversationMessage {
   timestamp: string;
   toolExecutions?: ToolExecutionRecord[];
   structuredResponse?: StructuredAgentResponse;
+  plan?: AgentExecutionPlan;
+  executionTrace?: ExecutionTraceItem[];
 }

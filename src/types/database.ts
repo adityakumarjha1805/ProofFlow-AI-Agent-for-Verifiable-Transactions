@@ -22,6 +22,8 @@ export interface ProposalRecord {
   status: ProposalStatus;                   // Current application proposal status
   riskAssessment: RiskAssessment;
   commitment?: CryptographicCommitment;
+  plan?: import('./index.ts').AgentExecutionPlan;
+  executionTrace?: import('./index.ts').ExecutionTraceItem[];
   createdAt: string;                        // ISO-8601 creation timestamp
   updatedAt: string;                        // ISO-8601 last update timestamp
   isArchived?: boolean;

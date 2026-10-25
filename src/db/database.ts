@@ -258,6 +258,8 @@ export class ProofFlowDatabase {
     intent: TransactionIntent;
     riskAssessment: any;
     policyEvaluation: any;
+    plan?: any;
+    executionTrace?: any;
   }): Promise<ProposalRecord> {
     // 1. Server-side validation
     this.validateNoPrivateKeys(params);
@@ -290,6 +292,8 @@ export class ProofFlowDatabase {
       amountInBaseUnits,
       status: 'AWAITING_APPROVAL',
       riskAssessment: params.riskAssessment,
+      plan: params.plan,
+      executionTrace: params.executionTrace || [],
       createdAt: now,
       updatedAt: now,
     };
@@ -417,6 +421,8 @@ export class ProofFlowDatabase {
         mode: bctx.mode,
       } : undefined,
       verification: vrfy?.auditData,
+      plan: pRecord.plan,
+      executionTrace: pRecord.executionTrace || [],
     };
 
     return { proposal, isAuthorizedOwner };
@@ -536,6 +542,8 @@ export class ProofFlowDatabase {
           mode: bctx.mode,
         } : undefined,
         verification: vrfy?.auditData,
+        plan: pRecord.plan,
+        executionTrace: pRecord.executionTrace || [],
       };
     });
 
@@ -686,6 +694,25 @@ export class ProofFlowDatabase {
 
     p.status = 'APPROVED';
     p.updatedAt = now;
+
+    if (!p.executionTrace) p.executionTrace = [];
+    p.executionTrace.push({
+      id: `trace-appr-${Date.now()}`,
+      phase: 'USER_APPROVAL',
+      title: 'User Explicit Approval & Commitment Sealed',
+      timestamp: now,
+      status: 'SUCCESS',
+      isActualEvidence: true,
+      sanitizedInput: {
+        walletAddress: canonicalWallet,
+        approvalMethod: params.approvalMethod,
+      },
+      sanitizedOutput: {
+        approvedCommitmentHash: params.approvedCommitmentHash,
+        hasSignature: Boolean(params.signature),
+      },
+      description: 'User explicitly authorized transaction parameters. Immutable cryptographic commitment sealed.',
+    });
 
     this.saveToLocalDisk();
 
@@ -854,6 +881,63 @@ export class ProofFlowDatabase {
       p.status = 'EXECUTED';
     }
     p.updatedAt = now;
+
+    if (!p.executionTrace) p.executionTrace = [];
+    p.executionTrace.push({
+      id: `trace-exec-${Date.now()}`,
+      phase: 'EXECUTION',
+      title: 'Transaction Submitted & Broadcast to Network',
+      timestamp: now,
+      status: params.status === 'REVERTED' ? 'FAILED' : 'SUCCESS',
+      isActualEvidence: true,
+      sanitizedInput: {
+        from: params.from,
+        to: params.to,
+        valueEth: params.valueEth,
+        chainId: params.chainId,
+      },
+      sanitizedOutput: {
+        txHash: params.txHash,
+        blockNumber: params.blockNumber,
+        mode: params.mode,
+      },
+      description: `Transaction broadcast to network (mode: ${params.mode}).`,
+    });
+    p.executionTrace.push({
+      id: `trace-rcpt-${Date.now()}`,
+      phase: 'RECEIPT',
+      title: 'Mined Block Receipt Retrieved',
+      timestamp: now,
+      status: params.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+      isActualEvidence: true,
+      sanitizedOutput: {
+        status: params.status,
+        blockNumber: params.blockNumber,
+        gasUsed: params.gasUsed,
+        effectiveGasPriceGwei: params.effectiveGasPriceGwei,
+      },
+      description:
+        params.status === 'SUCCESS' ? 'Receipt verified status: SUCCESS' : 'Receipt indicates EVM execution reverted.',
+    });
+    p.executionTrace.push({
+      id: `trace-verif-${Date.now()}`,
+      phase: 'VERIFICATION',
+      title: 'Independent Cryptographic Verification Audit',
+      timestamp: now,
+      status: verificationAudit.status === 'VERIFIED' ? 'SUCCESS' : 'FAILED',
+      isActualEvidence: true,
+      sanitizedOutput: {
+        status: verificationAudit.status,
+        hashesMatch: verificationAudit.hashesMatch,
+        commitmentHash: verificationAudit.commitmentHash,
+        executedPayloadHash: verificationAudit.executedPayloadHash,
+        criteriaPassed: Object.values(verificationAudit.checks).filter((c) => c.passed).length,
+      },
+      description:
+        verificationAudit.status === 'VERIFIED'
+          ? 'All 8 cryptographic criteria strictly match between approved commitment and mined block.'
+          : `Verification flagged: ${verificationAudit.discrepancies.join('; ') || 'Parameter divergence detected'}`,
+    });
 
     this.saveToLocalDisk();
 
